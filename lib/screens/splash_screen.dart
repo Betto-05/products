@@ -1,177 +1,133 @@
-import 'dart:async';
-import 'dart:math';
-
+// lib/screens/splash_screen.dart
 import 'package:flutter/material.dart';
-import 'package:products/screens/home_screen.dart';
+import 'package:products/providers/theme_notifier.dart';
+import 'package:products/screens/auth_gate.dart';
 
 class SplashScreen extends StatefulWidget {
-  const SplashScreen({super.key});
-
+  final ThemeNotifier themeNotifier;
+  const SplashScreen({super.key, required this.themeNotifier});
   @override
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
 class _SplashScreenState extends State<SplashScreen>
     with TickerProviderStateMixin {
-  late AnimationController _logoController;
-  late AnimationController _textController;
-  late AnimationController _bgController;
-  late Animation<double> _logoScale;
-  late Animation<double> _logoRotate;
-  late Animation<Offset> _textSlide;
-  late Animation<double> _bgShift;
+  late AnimationController _controller;
+  late Animation<double> _logoFadeAnimation;
+  late Animation<Offset> _logoSlideAnimation;
+  late Animation<double> _textFadeAnimation;
+  late Animation<Offset> _textSlideAnimation;
 
   @override
   void initState() {
     super.initState();
-
-    // Logo animation
-    _logoController = AnimationController(
+    _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1500),
     );
-    _logoScale = Tween<double>(begin: 0.5, end: 1.0).animate(
-      CurvedAnimation(parent: _logoController, curve: Curves.easeOutBack),
-    );
-    _logoRotate = Tween<double>(
-      begin: -0.2,
-      end: 0.0,
-    ).animate(CurvedAnimation(parent: _logoController, curve: Curves.easeOut));
-
-    // Text animation
-    _textController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1000),
-    );
-    _textSlide = Tween<Offset>(
-      begin: const Offset(0, 0.5),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _textController, curve: Curves.easeOut));
-
-    // Background animation
-    _bgController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 4),
-    )..repeat(reverse: true);
-    _bgShift = Tween<double>(
-      begin: -1.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(parent: _bgController, curve: Curves.easeInOut));
-
-    // Start animations
-    _logoController.forward();
-    Future.delayed(const Duration(milliseconds: 800), () {
-      _textController.forward();
-    });
-
-    // Navigate to main screen
-    Timer(const Duration(milliseconds: 3000), _navigateToHome);
-  }
-
-  void _navigateToHome() {
-    Navigator.of(context).pushReplacement(
-      PageRouteBuilder(
-        pageBuilder: (_, animation, __) => const CategoryScreen(),
-        transitionsBuilder: (_, animation, __, child) {
-          return FadeTransition(opacity: animation, child: child);
-        },
-        transitionDuration: const Duration(milliseconds: 800),
+    _logoFadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.0, 0.6, curve: Curves.easeOut),
       ),
     );
+    _logoSlideAnimation = Tween<Offset>(
+      begin: const Offset(0, 0.5),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.0, 0.6, curve: Curves.easeOut),
+      ),
+    );
+    _textFadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.4, 1.0, curve: Curves.easeOut),
+      ),
+    );
+    _textSlideAnimation = Tween<Offset>(
+      begin: const Offset(0, 0.5),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.4, 1.0, curve: Curves.easeOut),
+      ),
+    );
+
+    _controller.forward();
+
+    Future.delayed(const Duration(milliseconds: 2500), () {
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          PageRouteBuilder(
+            pageBuilder:
+                (_, __, ___) => AuthGate(themeNotifier: widget.themeNotifier),
+            transitionsBuilder:
+                (_, a, __, c) => FadeTransition(opacity: a, child: c),
+            transitionDuration: const Duration(milliseconds: 800),
+          ),
+        );
+      }
+    });
   }
 
   @override
   void dispose() {
-    _logoController.dispose();
-    _textController.dispose();
-    _bgController.dispose();
+    _controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final primary = Theme.of(context).colorScheme.primary;
-    final secondary = Theme.of(context).colorScheme.secondary;
-
     return Scaffold(
-      body: AnimatedBuilder(
-        animation: _bgController,
-        builder: (context, child) {
-          return Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment(-0.6 + _bgShift.value * 0.3, -1),
-                end: Alignment(0.6 - _bgShift.value * 0.3, 1),
-                colors: [primary.withOpacity(0.9), secondary.withOpacity(0.8)],
-              ),
-            ),
-            child: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  AnimatedBuilder(
-                    animation: _logoController,
-                    builder: (context, child) {
-                      return Transform.rotate(
-                        angle: _logoRotate.value,
-                        child: Transform.scale(
-                          scale: _logoScale.value,
-                          child: Image.asset("assets/logo.png"),
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 20),
-                  SlideTransition(
-                    position: _textSlide,
-                    child: Column(
-                      children: [
-                        Text(
-                          'Product Manager',
-                          style: Theme.of(
-                            context,
-                          ).textTheme.headlineMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                            letterSpacing: 1.3,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        _buildLoadingDots(),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildLoadingDots() {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: List.generate(3, (i) {
-        return AnimatedBuilder(
-          animation: _bgController,
-          builder: (context, child) {
-            double opacity =
-                (sin((_bgController.value * 2 * pi) + (i * 0.8)) + 1) / 2;
-            return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 3),
-              child: Opacity(
-                opacity: opacity,
-                child: const Text(
-                  '●',
-                  style: TextStyle(color: Colors.white, fontSize: 12),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SlideTransition(
+              position: _logoSlideAnimation,
+              child: FadeTransition(
+                opacity: _logoFadeAnimation,
+                child: SizedBox(
+                  height: 200,
+                  child: Image.asset('assets/logo.png'),
                 ),
               ),
-            );
-          },
-        );
-      }),
+            ),
+            const SizedBox(height: 16),
+            SlideTransition(
+              position: _textSlideAnimation,
+              child: FadeTransition(
+                opacity: _textFadeAnimation,
+                child: Text(
+                  'Stock Up',
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+              ),
+            ),
+            SlideTransition(
+              position: _textSlideAnimation,
+              child: FadeTransition(
+                opacity: _textFadeAnimation,
+                child: Text(
+                  'Stay fresh. Stay stocked',
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -1,235 +1,121 @@
-// --- CATEGORY SELECTION SCREEN ---
-import 'dart:async';
-
+// lib/screens/home_page.dart
 import 'package:flutter/material.dart';
-import 'package:products/data/shared_preference.dart';
-import 'package:products/models/category.dart';
+import 'package:products/models/models.dart';
+import 'package:products/providers/theme_notifier.dart';
+import 'package:products/screens/analytics_screen.dart';
+import 'package:products/screens/dashboard_screen.dart';
 import 'package:products/screens/product_list_screen.dart';
+import 'package:products/screens/settings_screen.dart';
+import 'package:products/screens/shopping_list_screen.dart';
+import 'package:products/services/firebase_services.dart';
+import 'package:products/services/storage_services.dart';
 
-class CategoryScreen extends StatefulWidget {
-  const CategoryScreen({super.key});
+class HomePage extends StatefulWidget {
+  final ThemeNotifier themeNotifier;
+  const HomePage({super.key, required this.themeNotifier});
   @override
-  State<CategoryScreen> createState() => _CategoryScreenState();
+  State<HomePage> createState() => _HomePageState();
 }
 
-class _CategoryScreenState extends State<CategoryScreen> {
-  final ProductStorageService _storageService = ProductStorageService();
+class _HomePageState extends State<HomePage> {
+  int _selectedIndex = 0;
+  final FirebaseService _firebaseService = FirebaseService();
+  final StorageService _storageService = StorageService();
   List<Category> _categories = [];
+  Map<String, dynamic> _settings = {'expiringSoonDays': 7};
   bool _isLoading = true;
-  bool _isContentVisible = false;
 
   @override
   void initState() {
     super.initState();
-    _loadData();
+    _loadAllData();
   }
 
-  Future<void> _loadData() async {
-    final loadedCategories = await _storageService.loadCategories();
+  Future<void> _loadAllData() async {
+    setState(() => _isLoading = true);
+    final loadedCategories =
+        await _firebaseService.loadCategoriesWithProducts();
+    final loadedSettings = await _storageService.loadSettings();
     if (mounted) {
       setState(() {
         _categories = loadedCategories;
+        _settings = loadedSettings;
         _isLoading = false;
-      });
-      Timer(const Duration(milliseconds: 200), () {
-        if (mounted) setState(() => _isContentVisible = true);
       });
     }
   }
 
-  Future<void> _saveData() async {
-    await _storageService.saveCategories(_categories);
-    setState(() {});
+  Future<void> _saveSettings(Map<String, dynamic> newSettings) async {
+    await _storageService.saveSettings(newSettings);
+    _loadAllData();
+  }
+
+  Future<void> _resetApp() async {
+    await _firebaseService.clearAllProducts();
+    await _storageService.clearSharedPrefs();
+    _loadAllData();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final List<Widget> screens = [
+      DashboardScreen(
+        categories: _categories,
+        settings: _settings,
+        onNavigateToCategory: _navigateToProductList,
+      ),
+      AnalyticsScreen(categories: _categories),
+      ShoppingListScreen(storageService: _storageService),
+      SettingsScreen(
+        settings: _settings,
+        onSettingsChanged: _saveSettings,
+        onResetApp: _resetApp,
+        themeNotifier: widget.themeNotifier,
+        storageService: _storageService,
+      ),
+    ];
+
+    return Scaffold(
+      body:
+          _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : IndexedStack(index: _selectedIndex, children: screens),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _selectedIndex,
+        onTap: (index) => setState(() => _selectedIndex = index),
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.dashboard_rounded),
+            label: 'Dashboard',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.pie_chart_rounded),
+            label: 'Analytics',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.shopping_cart_rounded),
+            label: 'Shopping',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.settings_rounded),
+            label: 'Settings',
+          ),
+        ],
+      ),
+    );
   }
 
   void _navigateToProductList(Category category) {
     Navigator.of(context)
         .push(
-          PageRouteBuilder(
-            transitionDuration: const Duration(milliseconds: 400),
-            pageBuilder:
-                (context, animation, secondaryAnimation) => ProductListScreen(
+          MaterialPageRoute(
+            builder:
+                (context) => ProductListScreen(
                   category: category,
-                  onDataChanged: _saveData,
+                  firebaseService: _firebaseService,
                 ),
-            transitionsBuilder:
-                (context, animation, secondaryAnimation, child) =>
-                    FadeTransition(opacity: animation, child: child),
           ),
         )
-        .then((_) => setState(() {}));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Product Dashboard')),
-      body:
-          _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                child: Column(
-                  children: [
-                    _buildAnimatedSummaryBar(),
-                    const SizedBox(height: 16),
-                    Expanded(child: _buildGridView()),
-                  ],
-                ),
-              ),
-    );
-  }
-
-  Widget _buildGridView() {
-    return GridView.builder(
-      padding: const EdgeInsets.only(bottom: 16),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 16,
-        mainAxisSpacing: 16,
-        childAspectRatio: 1.0,
-      ),
-      itemCount: _categories.length,
-      itemBuilder: (context, index) {
-        final category = _categories[index];
-        return AnimatedOpacity(
-          opacity: _isContentVisible ? 1.0 : 0.0,
-          duration: Duration(milliseconds: 400 + (index * 100)),
-          curve: Curves.easeOut,
-          child: AnimatedSlide(
-            offset: _isContentVisible ? Offset.zero : const Offset(0, 0.3),
-            duration: Duration(milliseconds: 400 + (index * 100)),
-            curve: Curves.easeOut,
-            child: _buildCategoryCard(category),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildAnimatedSummaryBar() {
-    final totalProducts =
-        _categories.isNotEmpty
-            ? _categories.map((c) => c.products.length).reduce((a, b) => a + b)
-            : 0;
-
-    return AnimatedOpacity(
-      opacity: _isContentVisible ? 1.0 : 0.0,
-      duration: const Duration(milliseconds: 500),
-      curve: Curves.easeOut,
-      child: AnimatedSlide(
-        offset: _isContentVisible ? Offset.zero : const Offset(0, -0.5),
-        duration: const Duration(milliseconds: 500),
-        curve: Curves.easeOut,
-        child: Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: IntrinsicHeight(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  _buildSummaryItem(
-                    '${_categories.length}',
-                    'Categories',
-                    Icons.category,
-                    Colors.purple.shade300,
-                  ),
-                  VerticalDivider(
-                    color: Colors.grey.shade300,
-                    thickness: 1,
-                    indent: 8,
-                    endIndent: 8,
-                  ),
-                  _buildSummaryItem(
-                    '$totalProducts',
-                    'Total Products',
-                    Icons.inventory_2,
-                    Theme.of(context).colorScheme.primary,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSummaryItem(
-    String value,
-    String label,
-    IconData icon,
-    Color color,
-  ) {
-    return Column(
-      children: [
-        Row(
-          children: [
-            Icon(icon, color: color, size: 20),
-            const SizedBox(width: 8),
-            Text(
-              value,
-              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 14,
-            color: Theme.of(
-              context,
-            ).textTheme.bodySmall?.color?.withOpacity(0.7),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildCategoryCard(Category category) {
-    return Card(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () => _navigateToProductList(category),
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.start,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: category.color.withOpacity(0.2),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(category.icon, size: 32, color: category.color),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                category.name,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const Spacer(),
-              Text(
-                '${category.products.length} items',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Theme.of(
-                    context,
-                  ).textTheme.bodySmall?.color?.withOpacity(0.7),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+        .then((_) => _loadAllData());
   }
 }
